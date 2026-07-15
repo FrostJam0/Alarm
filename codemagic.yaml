@@ -1,0 +1,27 @@
+workflows:
+  debug-build:
+    name: Debug APK Build
+    max_build_duration: 30
+    environment:
+      java: 17
+    scripts:
+      - name: Generate Gradle Wrapper
+        script: |
+          # Download Gradle 8.11.1 and use it to generate the wrapper JAR
+          GRADLE_VERSION=8.11.1
+          TEMP_DIR=$(mktemp -d)
+          echo "Downloading Gradle $GRADLE_VERSION..."
+          curl -sL -o "$TEMP_DIR/gradle.zip" \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+          unzip -q "$TEMP_DIR/gradle.zip" -d "$TEMP_DIR"
+          echo "Generating Gradle Wrapper..."
+          "$TEMP_DIR/gradle-${GRADLE_VERSION}/bin/gradle" wrapper \
+            --gradle-version "$GRADLE_VERSION" --no-daemon
+          rm -rf "$TEMP_DIR"
+          echo "Gradle Wrapper generated successfully."
+      - name: Set executable permission
+        script: chmod +x gradlew
+      - name: Build debug APK
+        script: ./gradlew assembleDebug
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
