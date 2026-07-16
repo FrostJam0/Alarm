@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
@@ -15,7 +17,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.VibrationEffect
+import android.os.Handler
+import android.os.Looper
 import android.os.VibratorManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.alarm.app.R
 import com.alarm.app.core.constants.AlarmConstants
@@ -43,6 +48,9 @@ class AlarmService : Service() {
     private var vibratorManager: VibratorManager? = null
     @Suppress("DEPRECATION")
     private var screenWakeLock: PowerManager.WakeLock? = null
+
+    private var audioManager: AudioManager? = null
+    private var volumeObserver: ContentObserver? = null
 
     @Inject
     lateinit var getAlarmByIdUseCase: GetAlarmByIdUseCase
@@ -87,6 +95,7 @@ class AlarmService : Service() {
         }
         
         startVibration()
+        forceAlarmVolumeMax()
 
         return START_STICKY
     }
@@ -217,10 +226,37 @@ class AlarmService : Service() {
     }
 
     /**
+     * Sets the alarm stream volume to maximum and registers a ContentObserver
+     * that bumps it back up if the user tries to lower it.
+     */
+    private fun forceAlarmVolumeMax() {
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val am = audioManager ?: return
+
+        // Set to max immediately
+        val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+        am.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
+
+        // Watch for changes and bump back to max
+        volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                val current = am.getStreamVolume(AudioManager.STREAM_ALARM)
+                val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                if (current < max) {
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
+                }
+            }
+        }
+        contentResolver.registerContentObserver(
+            Settings.System.CONTENT_URI, true, volumeObserver!!
+        )
+    }
+
+    /**
      * Called by the system to notify a Service that it is no longer used and is being removed.
      *
      * Cleans up system resources: stops and releases the [MediaPlayer], cancels vibration,
-     * and releases the CPU wake lock.
+     * unregisters the volume observer, and releases the CPU wake lock.
      */
     override fun onDestroy() {
         super.onDestroy()
@@ -231,6 +267,9 @@ class AlarmService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             vibratorManager?.defaultVibrator?.cancel()
         }
+
+        volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
+        volumeObserver = null
 
         if (screenWakeLock?.isHeld == true) {
             screenWakeLock?.release()

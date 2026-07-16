@@ -36,6 +36,12 @@ class RingingActivity : ComponentActivity() {
     @Inject
     lateinit var dataStore: AppPreferencesDataStore
 
+    /** Tracks whether the alarm is being legitimately dismissed. */
+    private var isDismissing = false
+
+    /** The alarm ID extracted from the launching intent. */
+    private var alarmId: Int = -1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
@@ -53,6 +59,10 @@ class RingingActivity : ComponentActivity() {
         }
 
         super.onCreate(savedInstanceState)
+
+        alarmId = intent?.getIntExtra(
+            com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, -1
+        ) ?: -1
 
         setContent {
             MaterialTheme {
@@ -72,6 +82,8 @@ class RingingActivity : ComponentActivity() {
     }
 
     private fun stopAlarmAndFinish() {
+        isDismissing = true
+
         val stopIntent = Intent(this, AlarmService::class.java)
         stopService(stopIntent)
 
@@ -79,6 +91,37 @@ class RingingActivity : ComponentActivity() {
             dataStore.setCurrentlyRingingAlarmId(null)
             finish()
         }
+    }
+
+    /**
+     * Called when the user presses Home or opens Recents.
+     * Re-launches this activity so the alarm screen can't be escaped.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isDismissing) {
+            relaunchSelf()
+        }
+    }
+
+    /**
+     * Secondary safety net: if anything pulls this activity off-screen
+     * (e.g. incoming call overlay, system dialog) and the alarm hasn't
+     * been dismissed, re-launch immediately.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (!isDismissing) {
+            relaunchSelf()
+        }
+    }
+
+    private fun relaunchSelf() {
+        val relaunchIntent = Intent(this, RingingActivity::class.java).apply {
+            putExtra(com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, alarmId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        startActivity(relaunchIntent)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
