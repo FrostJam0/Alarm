@@ -49,7 +49,6 @@
             android:showWhenLocked="true"
             android:showOnLockScreen="true"
             android:turnScreenOn="true"
-            android:noHistory="true"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.Alarm" />

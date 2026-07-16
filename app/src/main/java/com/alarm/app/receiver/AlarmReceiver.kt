@@ -48,14 +48,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
         scope.launch {
             try {
-                val currentlyRinging = dataStore.getCurrentlyRingingAlarmId()
-                if (currentlyRinging == null) {
-                    dataStore.setCurrentlyRingingAlarmId(alarmId)
-                    startAlarmService(context, alarmId)
-                } else {
-                    alarmRepository.setAlarmEnabled(alarmId, false, System.currentTimeMillis())
-                    WakeLockManager.release()
-                }
+                startAlarmService(context, alarmId)
             } finally {
                 pendingResult.finish()
             }

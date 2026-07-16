@@ -7,7 +7,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
@@ -15,7 +17,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.VibrationEffect
+import android.os.Handler
+import android.os.Looper
 import android.os.VibratorManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.alarm.app.R
 import com.alarm.app.core.constants.AlarmConstants
@@ -44,6 +49,9 @@ class AlarmService : Service() {
     @Suppress("DEPRECATION")
     private var screenWakeLock: PowerManager.WakeLock? = null
 
+    private var audioManager: AudioManager? = null
+    private var volumeObserver: ContentObserver? = null
+
     @Inject
     lateinit var getAlarmByIdUseCase: GetAlarmByIdUseCase
 
@@ -71,6 +79,14 @@ class AlarmService : Service() {
      *         or [START_NOT_STICKY] if invalid data is provided.
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Delegated relaunch request from RingingActivity — the service has the BAL
+        // exemption a backgrounded activity lacks, so it can call startActivity() safely.
+        if (intent?.action == AlarmConstants.ACTION_BRING_TO_FRONT) {
+            val alarmId = intent.getIntExtra(AlarmConstants.EXTRA_ALARM_ID, -1)
+            if (alarmId != -1) bringRingingActivityToFront(alarmId)
+            return START_STICKY
+        }
+
         val alarmId = intent?.getIntExtra(AlarmConstants.EXTRA_ALARM_ID, -1) ?: -1
         if (alarmId == -1) {
             stopSelf()
@@ -87,6 +103,7 @@ class AlarmService : Service() {
         }
         
         startVibration()
+        forceAlarmVolumeMax()
 
         return START_STICKY
     }
@@ -99,6 +116,18 @@ class AlarmService : Service() {
      * Requires SYSTEM_ALERT_WINDOW permission to start an activity from a service.
      */
     private fun launchRingingActivity(alarmId: Int) {
+        val activityIntent = Intent(this, RingingActivity::class.java).apply {
+            putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        startActivity(activityIntent)
+    }
+
+    /**
+     * Brings the already-running [RingingActivity] back to the foreground without
+     * recreating it.
+     */
+    private fun bringRingingActivityToFront(alarmId: Int) {
         val activityIntent = Intent(this, RingingActivity::class.java).apply {
             putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -170,6 +199,7 @@ class AlarmService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setOngoing(true)
+            .setAutoCancel(false)
             .build()
     }
 
@@ -217,10 +247,41 @@ class AlarmService : Service() {
     }
 
     /**
+     * Sets the alarm stream volume to maximum and registers a ContentObserver
+     * that bumps it back up if the user tries to lower it.
+     */
+    private fun forceAlarmVolumeMax() {
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val am = audioManager ?: return
+
+        var lastKnownVolume = am.getStreamVolume(AudioManager.STREAM_ALARM)
+
+        // Only react if the user specifically lowers the alarm volume
+        volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                val current = am.getStreamVolume(AudioManager.STREAM_ALARM)
+                val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                
+                if (current < lastKnownVolume) {
+                    // The user tried to lower it! Snap it to 100%
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
+                    lastKnownVolume = max
+                } else {
+                    // It either stayed the same (random setting change) or they raised it.
+                    lastKnownVolume = current
+                }
+            }
+        }
+        contentResolver.registerContentObserver(
+            Settings.System.CONTENT_URI, true, volumeObserver!!
+        )
+    }
+
+    /**
      * Called by the system to notify a Service that it is no longer used and is being removed.
      *
      * Cleans up system resources: stops and releases the [MediaPlayer], cancels vibration,
-     * and releases the CPU wake lock.
+     * unregisters the volume observer, and releases the CPU wake lock.
      */
     override fun onDestroy() {
         super.onDestroy()
@@ -231,6 +292,9 @@ class AlarmService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             vibratorManager?.defaultVibrator?.cancel()
         }
+
+        volumeObserver?.let { contentResolver.unregisterContentObserver(it) }
+        volumeObserver = null
 
         if (screenWakeLock?.isHeld == true) {
             screenWakeLock?.release()

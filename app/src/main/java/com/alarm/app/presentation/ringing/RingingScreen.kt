@@ -13,9 +13,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.delay
 
 /**
@@ -59,6 +61,9 @@ fun RingingScreen(
     onDismiss: () -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Block the back button — user must scan QR or tap 30 times to dismiss
+    BackHandler(enabled = true) { /* no-op */ }
     
     val isDismissed by viewModel.dismissed.collectAsState()
     val isMismatch by viewModel.scanMismatch.collectAsState()
@@ -87,26 +92,11 @@ fun RingingScreen(
         label = "MismatchColorAnimation"
     )
 
-    var isHolding by remember { mutableStateOf(false) }
-    var holdProgress by remember { mutableStateOf(0f) }
+    val clickCount by ActiveAlarmState.clickCount.collectAsState()
+    var offsetX by remember { mutableStateOf(0.dp) }
+    var offsetY by remember { mutableStateOf(0.dp) }
 
-    LaunchedEffect(isHolding) {
-        if (isHolding) {
-            val totalMs = 20000f
-            val stepMs = 50f
-            var elapsed = 0f
-            while (elapsed < totalMs) {
-                delay(stepMs.toLong())
-                elapsed += stepMs
-                holdProgress = elapsed / totalMs
-            }
-            viewModel.forceDismiss()
-        } else {
-            holdProgress = 0f
-        }
-    }
-
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isMismatch) backgroundColor else Color.Black)
@@ -172,35 +162,40 @@ fun RingingScreen(
             )
         }
 
-        // Emergency Hold Button
-        Box(
-            modifier = Modifier
+        // Emergency Tap Button
+        val buttonModifier = if (clickCount == 0) {
+            Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 64.dp)
+        } else {
+            Modifier.offset(x = offsetX, y = offsetY)
+        }
+
+        Box(
+            modifier = buttonModifier
                 .size(120.dp)
                 .clip(RoundedCornerShape(32.dp))
                 .background(Color.White.copy(alpha = 0.5f))
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onPress = {
-                            isHolding = true
-                            tryAwaitRelease()
-                            isHolding = false
+                        onTap = {
+                            val currentCount = ActiveAlarmState.clickCount.value + 1
+                            ActiveAlarmState.clickCount.value = currentCount
+                            if (currentCount >= 30) {
+                                viewModel.forceDismiss()
+                            } else {
+                                val maxOffsetX = maxWidth.value - 120f
+                                val maxOffsetY = maxHeight.value - 120f
+                                offsetX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat().dp else 0.dp
+                                offsetY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat().dp else 0.dp
+                            }
                         }
                     )
                 },
             contentAlignment = Alignment.Center
         ) {
-            if (isHolding) {
-                CircularProgressIndicator(
-                    progress = { holdProgress },
-                    color = Color.Red,
-                    strokeWidth = 8.dp,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
             Text(
-                text = "Hold to\nForce Dismiss",
+                text = "Tap to\nDismiss\n($clickCount/30)",
                 color = Color.Black.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
                 fontSize = 12.sp,

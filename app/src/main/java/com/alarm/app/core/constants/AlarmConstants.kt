@@ -24,4 +24,7 @@ object AlarmConstants {
     
     /** The ID of the notification channel used for alarm notifications. */
     const val NOTIFICATION_CHANNEL_ID = "alarm_channel"
+
+    /** Action sent to AlarmService to bring RingingActivity back to the foreground. */
+    const val ACTION_BRING_TO_FRONT = "com.alarm.app.action.BRING_TO_FRONT"
 }

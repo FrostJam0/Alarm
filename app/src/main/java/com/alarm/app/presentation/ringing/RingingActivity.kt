@@ -36,6 +36,12 @@ class RingingActivity : ComponentActivity() {
     @Inject
     lateinit var dataStore: AppPreferencesDataStore
 
+    /** Tracks whether the alarm is being legitimately dismissed. */
+    private var isDismissing = false
+
+    /** The alarm ID extracted from the launching intent. */
+    private var alarmId: Int = -1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
@@ -43,16 +49,14 @@ class RingingActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON or
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            keyguardManager.requestDismissKeyguard(this, null)
-        }
 
         super.onCreate(savedInstanceState)
+
+        alarmId = intent?.getIntExtra(
+            com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, -1
+        ) ?: -1
 
         setContent {
             MaterialTheme {
@@ -71,14 +75,63 @@ class RingingActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        
+        // When brought back to front via singleInstance, explicitly re-apply lock screen flags
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
+    }
+
     private fun stopAlarmAndFinish() {
+        isDismissing = true
+
         val stopIntent = Intent(this, AlarmService::class.java)
         stopService(stopIntent)
 
         lifecycleScope.launch {
+            ActiveAlarmState.reset()
             dataStore.setCurrentlyRingingAlarmId(null)
             finish()
         }
+    }
+
+    /**
+     * Called when the user presses Home or opens Recents.
+     * After a short delay, checks if the activity is still not in focus
+     * and brings it back to the foreground if needed.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!isDismissing) {
+            handler.postDelayed({ bringBackIfNeeded() }, 50)
+        }
+    }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /**
+     * Only relaunches if the activity doesn't currently have window focus,
+     * meaning it's genuinely not visible to the user.
+     * Delegates to AlarmService which, as a foreground service, has the BAL
+     * exemption to call startActivity() even after the phone has been unlocked.
+     */
+    private fun bringBackIfNeeded() {
+        if (isDismissing) return
+        if (hasWindowFocus()) return  // already on screen, do nothing
+
+        val serviceIntent = Intent(this, com.alarm.app.service.AlarmService::class.java).apply {
+            action = com.alarm.app.core.constants.AlarmConstants.ACTION_BRING_TO_FRONT
+            putExtra(com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, alarmId)
+        }
+        startService(serviceIntent)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
