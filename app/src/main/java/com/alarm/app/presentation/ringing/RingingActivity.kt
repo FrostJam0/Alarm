@@ -111,7 +111,7 @@ class RingingActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!isDismissing) {
-            handler.postDelayed({ bringBackIfNeeded() }, 250)
+            handler.postDelayed({ bringBackIfNeeded() }, 50)
         }
     }
 

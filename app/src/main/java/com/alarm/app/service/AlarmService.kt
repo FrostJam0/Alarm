@@ -199,6 +199,7 @@ class AlarmService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setOngoing(true)
+            .setAutoCancel(false)
             .build()
     }
 
