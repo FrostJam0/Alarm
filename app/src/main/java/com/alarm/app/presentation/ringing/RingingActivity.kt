@@ -95,31 +95,29 @@ class RingingActivity : ComponentActivity() {
 
     /**
      * Called when the user presses Home or opens Recents.
-     * Re-launches this activity so the alarm screen can't be escaped.
+     * After a short delay, checks if the activity is still not in focus
+     * and brings it back to the foreground if needed.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!isDismissing) {
-            relaunchSelf()
+            handler.postDelayed({ bringBackIfNeeded() }, 350)
         }
     }
+
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
-     * Secondary safety net: if anything pulls this activity off-screen
-     * (e.g. incoming call overlay, system dialog) and the alarm hasn't
-     * been dismissed, re-launch immediately.
+     * Only relaunches if the activity doesn't currently have window focus,
+     * meaning it's genuinely not visible to the user.
      */
-    override fun onStop() {
-        super.onStop()
-        if (!isDismissing) {
-            relaunchSelf()
-        }
-    }
+    private fun bringBackIfNeeded() {
+        if (isDismissing) return
+        if (hasWindowFocus()) return  // already on screen, do nothing
 
-    private fun relaunchSelf() {
         val relaunchIntent = Intent(this, RingingActivity::class.java).apply {
             putExtra(com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, alarmId)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
         startActivity(relaunchIntent)
     }
