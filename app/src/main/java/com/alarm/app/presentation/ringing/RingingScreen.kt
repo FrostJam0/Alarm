@@ -92,7 +92,7 @@ fun RingingScreen(
         label = "MismatchColorAnimation"
     )
 
-    var clickCount by remember { mutableStateOf(0) }
+    val clickCount by ActiveAlarmState.clickCount.collectAsState()
     var offsetX by remember { mutableStateOf(0.dp) }
     var offsetY by remember { mutableStateOf(0.dp) }
 
@@ -179,8 +179,9 @@ fun RingingScreen(
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
-                            clickCount++
-                            if (clickCount >= 30) {
+                            val currentCount = ActiveAlarmState.clickCount.value + 1
+                            ActiveAlarmState.clickCount.value = currentCount
+                            if (currentCount >= 30) {
                                 viewModel.forceDismiss()
                             } else {
                                 val maxOffsetX = maxWidth.value - 120f

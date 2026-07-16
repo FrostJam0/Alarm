@@ -81,6 +81,22 @@ class RingingActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        
+        // When brought back to front via singleInstance, explicitly re-apply lock screen flags
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        )
+    }
+
     private fun stopAlarmAndFinish() {
         isDismissing = true
 
@@ -88,6 +104,7 @@ class RingingActivity : ComponentActivity() {
         stopService(stopIntent)
 
         lifecycleScope.launch {
+            ActiveAlarmState.reset()
             dataStore.setCurrentlyRingingAlarmId(null)
             finish()
         }

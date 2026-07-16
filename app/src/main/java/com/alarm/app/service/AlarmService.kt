@@ -125,12 +125,12 @@ class AlarmService : Service() {
 
     /**
      * Brings the already-running [RingingActivity] back to the foreground without
-     * recreating it. Uses REORDER_TO_FRONT so no new instance or onCreate is triggered.
+     * recreating it.
      */
     private fun bringRingingActivityToFront(alarmId: Int) {
         val activityIntent = Intent(this, RingingActivity::class.java).apply {
             putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
         startActivity(activityIntent)
     }
