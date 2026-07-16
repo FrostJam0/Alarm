@@ -132,7 +132,20 @@ class AlarmService : Service() {
             putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
-        startActivity(activityIntent)
+        // Using PendingIntent bypasses Android 10+ homescreen background launch restrictions
+        // because it re-uses the privileges granted to the alarm's Notification.
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            alarmId,
+            activityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            pendingIntent.send()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            startActivity(activityIntent)
+        }
     }
 
     /**
@@ -301,6 +314,19 @@ class AlarmService : Service() {
         screenWakeLock = null
         
         WakeLockManager.release()
+    }
+
+    /**
+     * Intercepts swipe-to-kill in the Recents menu.
+     * If the user manages to swipe the app away before the 250ms trap fires,
+     * this instantly resurrects it.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        val alarmId = rootIntent?.getIntExtra(AlarmConstants.EXTRA_ALARM_ID, -1) ?: -1
+        if (alarmId != -1) {
+            launchRingingActivity(alarmId)
+        }
     }
 
     /**

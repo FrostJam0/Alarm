@@ -50,7 +50,6 @@
             android:showOnLockScreen="true"
             android:turnScreenOn="true"
             android:launchMode="singleInstance"
-            android:excludeFromRecents="true"
             android:theme="@style/Theme.Alarm" />
 
         <service
