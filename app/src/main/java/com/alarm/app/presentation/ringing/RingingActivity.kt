@@ -101,7 +101,7 @@ class RingingActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!isDismissing) {
-            handler.postDelayed({ bringBackIfNeeded() }, 350)
+            handler.postDelayed({ bringBackIfNeeded() }, 30)
         }
     }
 
@@ -110,16 +110,18 @@ class RingingActivity : ComponentActivity() {
     /**
      * Only relaunches if the activity doesn't currently have window focus,
      * meaning it's genuinely not visible to the user.
+     * Delegates to AlarmService which, as a foreground service, has the BAL
+     * exemption to call startActivity() even after the phone has been unlocked.
      */
     private fun bringBackIfNeeded() {
         if (isDismissing) return
         if (hasWindowFocus()) return  // already on screen, do nothing
 
-        val relaunchIntent = Intent(this, RingingActivity::class.java).apply {
+        val serviceIntent = Intent(this, com.alarm.app.service.AlarmService::class.java).apply {
+            action = com.alarm.app.core.constants.AlarmConstants.ACTION_BRING_TO_FRONT
             putExtra(com.alarm.app.core.constants.AlarmConstants.EXTRA_ALARM_ID, alarmId)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
-        startActivity(relaunchIntent)
+        startService(serviceIntent)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {

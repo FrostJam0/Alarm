@@ -79,6 +79,14 @@ class AlarmService : Service() {
      *         or [START_NOT_STICKY] if invalid data is provided.
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Delegated relaunch request from RingingActivity — the service has the BAL
+        // exemption a backgrounded activity lacks, so it can call startActivity() safely.
+        if (intent?.action == AlarmConstants.ACTION_BRING_TO_FRONT) {
+            val alarmId = intent.getIntExtra(AlarmConstants.EXTRA_ALARM_ID, -1)
+            if (alarmId != -1) bringRingingActivityToFront(alarmId)
+            return START_STICKY
+        }
+
         val alarmId = intent?.getIntExtra(AlarmConstants.EXTRA_ALARM_ID, -1) ?: -1
         if (alarmId == -1) {
             stopSelf()
@@ -111,6 +119,18 @@ class AlarmService : Service() {
         val activityIntent = Intent(this, RingingActivity::class.java).apply {
             putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        startActivity(activityIntent)
+    }
+
+    /**
+     * Brings the already-running [RingingActivity] back to the foreground without
+     * recreating it. Uses REORDER_TO_FRONT so no new instance or onCreate is triggered.
+     */
+    private fun bringRingingActivityToFront(alarmId: Int) {
+        val activityIntent = Intent(this, RingingActivity::class.java).apply {
+            putExtra(AlarmConstants.EXTRA_ALARM_ID, alarmId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         }
         startActivity(activityIntent)
     }
@@ -233,11 +253,7 @@ class AlarmService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val am = audioManager ?: return
 
-        // Set to max immediately
-        val maxVolume = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-        am.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
-
-        // Watch for changes and bump back to max
+        // Only react if the user tries to lower the volume — never touch it on init
         volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val current = am.getStreamVolume(AudioManager.STREAM_ALARM)
