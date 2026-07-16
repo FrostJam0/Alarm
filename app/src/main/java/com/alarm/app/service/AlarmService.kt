@@ -253,13 +253,21 @@ class AlarmService : Service() {
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val am = audioManager ?: return
 
-        // Only react if the user tries to lower the volume — never touch it on init
+        var lastKnownVolume = am.getStreamVolume(AudioManager.STREAM_ALARM)
+
+        // Only react if the user specifically lowers the alarm volume
         volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val current = am.getStreamVolume(AudioManager.STREAM_ALARM)
                 val max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-                if (current < max) {
+                
+                if (current < lastKnownVolume) {
+                    // The user tried to lower it! Snap it to 100%
                     am.setStreamVolume(AudioManager.STREAM_ALARM, max, 0)
+                    lastKnownVolume = max
+                } else {
+                    // It either stayed the same (random setting change) or they raised it.
+                    lastKnownVolume = current
                 }
             }
         }
