@@ -17,8 +17,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import java.util.concurrent.Executors
 import javax.inject.Inject
+
+enum class ScanState {
+    IDLE,              // Camera not yet activated
+    WAITING_FOR_QR,    // Camera active, no correct QR in view
+    HOLDING,           // Correct QR visible, accumulating progress
+    GRACE,             // QR temporarily lost, 1s grace before reset
+    MISMATCH_FLASH,    // Wrong QR scanned, red flash
+    DISMISSED          // 8s hold complete
+}
 
 /**
  * ViewModel managing the state and logic for the active ringing alarm screen.
@@ -54,6 +65,26 @@ class RingingViewModel @Inject constructor(
     private val _scanMismatch = MutableStateFlow(false)
     val scanMismatch: StateFlow<Boolean> = _scanMismatch.asStateFlow()
 
+    private val _scanState = MutableStateFlow(ScanState.IDLE)
+    val scanState: StateFlow<ScanState> = _scanState.asStateFlow()
+
+    private val _scanProgress = MutableStateFlow(0f)
+    val scanProgress: StateFlow<Float> = _scanProgress.asStateFlow()
+
+    private val _scanStatusText = MutableStateFlow("")
+    val scanStatusText: StateFlow<String> = _scanStatusText.asStateFlow()
+
+    private var _accumulatedMs = 0L
+    private var _lastQrSeenTimestamp = 0L
+    private var progressJob: Job? = null
+
+    companion object {
+        const val HOLD_DURATION_MS = 8000L
+        const val GRACE_PERIOD_MS = 1000L
+        const val MIN_QR_AREA_PERCENT = 15f
+        const val SCAN_TICK_INTERVAL_MS = 50L
+    }
+
     init {
         if (alarmId != -1) {
             viewModelScope.launch {
@@ -71,41 +102,86 @@ class RingingViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Processes a newly scanned QR code value.
-     *
-     * If the scanned value matches the expected value, the dismissed state is triggered.
-     * Otherwise, a mismatch error state is shown temporarily.
-     *
-     * @param scannedValue The decoded string from the camera's barcode scanner.
-     */
-    fun onQrScanned(scannedValue: String) {
-        if (_expectedQrValue.value == null) return
-        
-        if (scannedValue == _expectedQrValue.value) {
-            _dismissed.value = true
-        } else {
-            _scanMismatch.value = true
+    fun startCamera() {
+        if (_scanState.value == ScanState.IDLE) {
+            updateScanState(ScanState.WAITING_FOR_QR)
         }
     }
 
-    /**
-     * Clears the scan mismatch error state.
-     */
-    fun clearMismatch() {
-        _scanMismatch.value = false
+    private fun updateScanState(newState: ScanState) {
+        _scanState.value = newState
+        _scanStatusText.value = when (newState) {
+            ScanState.IDLE -> ""
+            ScanState.WAITING_FOR_QR -> "Point camera at your QR code"
+            ScanState.HOLDING -> "Hold still..."
+            ScanState.GRACE -> "Hold still..."
+            ScanState.MISMATCH_FLASH -> "Wrong QR code!"
+            ScanState.DISMISSED -> "✓ Alarm dismissed"
+        }
     }
 
-    /**
-     * Bypasses the QR scan and forces the alarm to dismiss.
-     */
+    fun onFrameAnalyzed(value: String?, areaPercent: Float) {
+        if (_expectedQrValue.value == null || _scanState.value == ScanState.DISMISSED) return
+
+        if (value == null || areaPercent < MIN_QR_AREA_PERCENT) {
+            return
+        }
+
+        if (value == _expectedQrValue.value) {
+            _lastQrSeenTimestamp = System.currentTimeMillis()
+            if (_scanState.value == ScanState.WAITING_FOR_QR || _scanState.value == ScanState.GRACE || _scanState.value == ScanState.MISMATCH_FLASH) {
+                updateScanState(ScanState.HOLDING)
+                startProgressTicker()
+            }
+        } else {
+            if (_scanState.value == ScanState.WAITING_FOR_QR) {
+                updateScanState(ScanState.MISMATCH_FLASH)
+            }
+        }
+    }
+
+    private fun startProgressTicker() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            while (_scanState.value == ScanState.HOLDING || _scanState.value == ScanState.GRACE) {
+                delay(SCAN_TICK_INTERVAL_MS)
+                val now = System.currentTimeMillis()
+                
+                if (now - _lastQrSeenTimestamp > SCAN_TICK_INTERVAL_MS * 2) {
+                    if (_scanState.value == ScanState.HOLDING) {
+                        updateScanState(ScanState.GRACE)
+                    } else if (_scanState.value == ScanState.GRACE && now - _lastQrSeenTimestamp > GRACE_PERIOD_MS) {
+                        _accumulatedMs = 0
+                        _scanProgress.value = 0f
+                        updateScanState(ScanState.WAITING_FOR_QR)
+                        break
+                    }
+                } else {
+                    if (_scanState.value == ScanState.GRACE) {
+                        updateScanState(ScanState.HOLDING)
+                    }
+                    _accumulatedMs += SCAN_TICK_INTERVAL_MS
+                    _scanProgress.value = _accumulatedMs.toFloat() / HOLD_DURATION_MS
+                    if (_accumulatedMs >= HOLD_DURATION_MS) {
+                        updateScanState(ScanState.DISMISSED)
+                        _dismissed.value = true
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    fun clearMismatch() {
+        if (_scanState.value == ScanState.MISMATCH_FLASH) {
+            updateScanState(ScanState.WAITING_FOR_QR)
+        }
+    }
+
     fun forceDismiss() {
         _dismissed.value = true
     }
 
-    /**
-     * Clears the currently ringing alarm ID from the data store after dismissal is complete.
-     */
     fun onDismissedComplete() {
         viewModelScope.launch {
             dataStore.setCurrentlyRingingAlarmId(null)
@@ -114,7 +190,7 @@ class RingingViewModel @Inject constructor(
 
     val analyzerExecutor = Executors.newSingleThreadExecutor()
 
-    fun getBarcodeAnalyzer(onScanned: (String) -> Unit): ImageAnalysis.Analyzer {
+    fun getBarcodeAnalyzer(): ImageAnalysis.Analyzer {
         val barcodeScanner = BarcodeScanning.getClient(
             BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
@@ -124,11 +200,24 @@ class RingingViewModel @Inject constructor(
             val mediaImage = imageProxy.image
             if (mediaImage != null) {
                 val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                val rotation = imageProxy.imageInfo.rotationDegrees
+                val frameWidth = if (rotation == 90 || rotation == 270) imageProxy.height else imageProxy.width
+                val frameHeight = if (rotation == 90 || rotation == 270) imageProxy.width else imageProxy.height
+                val frameArea = (frameWidth * frameHeight).toFloat()
+                
                 barcodeScanner.process(image)
                     .addOnSuccessListener { barcodes ->
-                        barcodes.firstOrNull()?.rawValue?.let { value ->
-                            onScanned(value)
+                        val barcode = barcodes.firstOrNull()
+                        val value = barcode?.rawValue
+                        var areaPercent = 0f
+                        
+                        val boundingBox = barcode?.boundingBox
+                        if (boundingBox != null && frameArea > 0) {
+                            val barcodeArea = boundingBox.width().toFloat() * boundingBox.height().toFloat()
+                            areaPercent = (barcodeArea / frameArea) * 100f
                         }
+                        
+                        onFrameAnalyzed(value, areaPercent)
                     }
                     .addOnCompleteListener {
                         imageProxy.close()

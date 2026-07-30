@@ -69,8 +69,8 @@ class AlarmListViewModel @Inject constructor(
      */
     fun deleteAlarm(alarm: Alarm) {
         viewModelScope.launch {
-            deleteAlarmUseCase(alarm)
             alarmScheduler.cancel(alarm.id)
+            deleteAlarmUseCase(alarm)
         }
     }
 }

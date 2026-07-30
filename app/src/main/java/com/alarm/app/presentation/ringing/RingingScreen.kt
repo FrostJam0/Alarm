@@ -12,21 +12,11 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,24 +27,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.delay
+import kotlin.math.sqrt
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size as CanvasSize
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.unit.Dp
 
-/**
- * The main UI shown when an alarm is actively ringing.
- *
- * Displays a camera preview and prompts the user to scan the specific QR code
- * associated with the ringing alarm to dismiss it. Highlights the screen in red
- * if the user scans an incorrect QR code.
- *
- * @param viewModel The ViewModel providing the expected QR code value and handling scan logic.
- * @param onDismiss Callback invoked when the correct QR code is scanned and the alarm should be dismissed.
- */
 @Composable
 fun RingingScreen(
     viewModel: RingingViewModel,
@@ -66,15 +52,18 @@ fun RingingScreen(
     BackHandler(enabled = true) { /* no-op */ }
     
     val isDismissed by viewModel.dismissed.collectAsState()
-    val isMismatch by viewModel.scanMismatch.collectAsState()
-
     val alarmLabel by viewModel.alarmLabel.collectAsState()
+    val scanState by viewModel.scanState.collectAsState()
+    val scanProgress by viewModel.scanProgress.collectAsState()
+    val scanStatusText by viewModel.scanStatusText.collectAsState()
 
     LaunchedEffect(isDismissed) {
         if (isDismissed) {
             onDismiss()
         }
     }
+
+    val isMismatch = scanState == ScanState.MISMATCH_FLASH
 
     LaunchedEffect(isMismatch) {
         if (isMismatch) {
@@ -83,124 +72,213 @@ fun RingingScreen(
         }
     }
 
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isMismatch) Color.Red.copy(alpha = 0.5f) else Color.Black,
-        animationSpec = infiniteRepeatable(
-            animation = tween(200),
-            repeatMode = RepeatMode.Reverse
-        ),
+    val greenRegionBorderColor by animateColorAsState(
+        targetValue = if (isMismatch) Color.Red.copy(alpha = 0.8f) else Color.Green.copy(alpha = 0.4f),
         label = "MismatchColorAnimation"
     )
 
-    val clickCount by ActiveAlarmState.clickCount.collectAsState()
-    var offsetX by remember { mutableStateOf(0.dp) }
-    var offsetY by remember { mutableStateOf(0.dp) }
-
-    BoxWithConstraints(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isMismatch) backgroundColor else Color.Black)
+            .background(Color(0xFF2A2A2A).copy(alpha = 0.6f)) // Grey semi-transparent overlay
     ) {
-        // Camera Preview
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                val previewView = PreviewView(ctx)
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.surfaceProvider = previewView.surfaceProvider
-                    }
-
-                    val imageAnalyzer = ImageAnalysis.Builder()
-                        .setTargetResolution(Size(1280, 720))
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also { analysis ->
-                            analysis.setAnalyzer(
-                                viewModel.analyzerExecutor,
-                                viewModel.getBarcodeAnalyzer { value ->
-                                    viewModel.onQrScanned(value)
-                                }
-                            )
-                        }
-
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            preview,
-                            imageAnalyzer
-                        )
-                    } catch (e: Exception) {
-                        Log.e("RingingScreen", "Use case binding failed", e)
-                    }
-                }, ContextCompat.getMainExecutor(ctx))
-
-                previewView
-            }
-        )
-
-        // Overlay UI
-        Column(
+        // Purple Region (10% height): Alarm Label
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(32.dp)
-                .align(Alignment.TopCenter),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxHeight(0.10f)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.5.dp, Color(0xFFBAC3FF).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                .background(Color.White.copy(alpha = 0.05f)),
+            contentAlignment = Alignment.Center
         ) {
             Text(
                 text = alarmLabel,
                 color = Color.White,
-                fontSize = 48.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 8.sp,
+                letterSpacing = 4.sp,
                 textAlign = TextAlign.Center
             )
         }
 
-        // Emergency Tap Button
-        val buttonModifier = if (clickCount == 0) {
-            Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 64.dp)
-        } else {
-            Modifier.offset(x = offsetX, y = offsetY)
-        }
-
+        // Green Region (55% height): QR Scanner
         Box(
-            modifier = buttonModifier
-                .size(120.dp)
-                .clip(RoundedCornerShape(32.dp))
-                .background(Color.White.copy(alpha = 0.5f))
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
-                            val currentCount = ActiveAlarmState.clickCount.value + 1
-                            ActiveAlarmState.clickCount.value = currentCount
-                            if (currentCount >= 30) {
-                                viewModel.forceDismiss()
-                            } else {
-                                val maxOffsetX = maxWidth.value - 120f
-                                val maxOffsetY = maxHeight.value - 120f
-                                offsetX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat().dp else 0.dp
-                                offsetY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat().dp else 0.dp
-                            }
-                        }
-                    )
-                },
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.61f) // 0.61 of remaining 90% is roughly 55% of total
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.5.dp, greenRegionBorderColor, RoundedCornerShape(16.dp))
+                .background(Color.White.copy(alpha = 0.05f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Tap to\nDismiss\n($clickCount/30)",
-                color = Color.Black.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (scanState == ScanState.IDLE) {
+                Text(
+                    text = "Tap to start QR Scanner",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.clickable {
+                        viewModel.startCamera()
+                    }
+                )
+            } else {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        val previewView = PreviewView(ctx)
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+                        cameraProviderFuture.addListener({
+                            val cameraProvider = cameraProviderFuture.get()
+                            val preview = Preview.Builder().build().also {
+                                it.surfaceProvider = previewView.surfaceProvider
+                            }
+
+                            val imageAnalyzer = ImageAnalysis.Builder()
+                                .setTargetResolution(Size(1280, 720))
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+                                .also { analysis ->
+                                    analysis.setAnalyzer(
+                                        viewModel.analyzerExecutor,
+                                        viewModel.getBarcodeAnalyzer()
+                                    )
+                                }
+
+                            try {
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                    preview,
+                                    imageAnalyzer
+                                )
+                            } catch (e: Exception) {
+                                Log.e("RingingScreen", "Use case binding failed", e)
+                            }
+                        }, ContextCompat.getMainExecutor(ctx))
+
+                        previewView
+                    }
+                )
+
+                // Progress Ring
+                if (scanState == ScanState.HOLDING || scanState == ScanState.GRACE) {
+                    val ringColor = if (scanState == ScanState.GRACE) Color.Yellow.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.8f)
+                    Canvas(modifier = Modifier.size(60.dp)) {
+                        drawArc(
+                            color = ringColor,
+                            startAngle = -90f,
+                            sweepAngle = 360f * scanProgress,
+                            useCenter = false,
+                            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
+                }
+
+                // Status Text
+                if (scanStatusText.isNotEmpty()) {
+                    Text(
+                        text = scanStatusText,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 16.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+
+        // Blue Region (35% height): Tap to Dismiss
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight() // Takes remaining height (~35%)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .border(1.5.dp, Color(0xFFBAC3FF).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                .background(Color.White.copy(alpha = 0.05f))
+        ) {
+            val clickCount by ActiveAlarmState.clickCount.collectAsState()
+            val savedOffsetX by ActiveAlarmState.buttonOffsetX.collectAsState()
+            val savedOffsetY by ActiveAlarmState.buttonOffsetY.collectAsState()
+
+            val buttonSize = 80.dp
+
+            var offsetX by remember { mutableStateOf(if (savedOffsetX.isNaN()) ((maxWidth - buttonSize) / 2) else savedOffsetX.dp) }
+            var offsetY by remember { mutableStateOf(if (savedOffsetY.isNaN()) ((maxHeight - buttonSize) / 2) else savedOffsetY.dp) }
+
+            Box(
+                modifier = Modifier
+                    .offset(x = offsetX, y = offsetY)
+                    .size(buttonSize)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color.White.copy(alpha = 0.5f))
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                val currentCount = ActiveAlarmState.clickCount.value + 1
+                                ActiveAlarmState.clickCount.value = currentCount
+                                if (currentCount >= 30) {
+                                    viewModel.forceDismiss()
+                                } else {
+                                    val maxOffsetX = maxWidth.value - buttonSize.value
+                                    val maxOffsetY = maxHeight.value - buttonSize.value
+                                    
+                                    val minDistance = 0.35f * sqrt(maxWidth.value * maxWidth.value + maxHeight.value * maxHeight.value)
+                                    val currentXVal = offsetX.value
+                                    val currentYVal = offsetY.value
+                                    
+                                    var newX = currentXVal
+                                    var newY = currentYVal
+                                    
+                                    var found = false
+                                    for (i in 0 until 20) {
+                                        val testX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
+                                        val testY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                        
+                                        val dx = testX - currentXVal
+                                        val dy = testY - currentYVal
+                                        val dist = sqrt(dx * dx + dy * dy)
+                                        
+                                        if (dist >= minDistance) {
+                                            newX = testX
+                                            newY = testY
+                                            found = true
+                                            break
+                                        }
+                                    }
+                                    
+                                    if (!found) {
+                                        // Fallback
+                                        newX = maxOffsetX - currentXVal
+                                        newY = maxOffsetY - currentYVal
+                                    }
+                                    
+                                    offsetX = newX.dp
+                                    offsetY = newY.dp
+                                    ActiveAlarmState.buttonOffsetX.value = newX
+                                    ActiveAlarmState.buttonOffsetY.value = newY
+                                }
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Tap to\nDismiss\n($clickCount/30)",
+                    color = Color.Black.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

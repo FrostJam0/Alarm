@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.alarm.app.domain.model.Alarm
 import com.alarm.app.domain.usecase.alarm.CreateAlarmUseCase
 import com.alarm.app.domain.usecase.alarm.UpdateAlarmUseCase
+import com.alarm.app.domain.usecase.qr.GetQrCodeByIdUseCase
 import com.alarm.app.scheduler.AlarmScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
@@ -22,8 +23,13 @@ import javax.inject.Inject
 class AlarmCreateViewModel @Inject constructor(
     private val createAlarmUseCase: CreateAlarmUseCase,
     private val updateAlarmUseCase: UpdateAlarmUseCase,
+    private val getQrCodeByIdUseCase: GetQrCodeByIdUseCase,
     private val alarmScheduler: AlarmScheduler
 ) : ViewModel() {
+
+    suspend fun getQrCodeName(id: Int): String? {
+        return getQrCodeByIdUseCase(id)?.name
+    }
 
     /**
      * Saves an alarm. If the alarm is new (id == 0), it creates a new entry and schedules it.
