@@ -79,7 +79,7 @@ class RingingViewModel @Inject constructor(
     private var progressJob: Job? = null
 
     companion object {
-        const val HOLD_DURATION_MS = 8000L
+        const val HOLD_DURATION_MS = 7200L
         const val GRACE_PERIOD_MS = 1500L
         const val DROP_THRESHOLD_MS = 650L
         const val MIN_QR_AREA_PERCENT = 12f
