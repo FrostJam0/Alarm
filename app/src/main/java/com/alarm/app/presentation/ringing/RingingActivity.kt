@@ -104,14 +104,13 @@ class RingingActivity : ComponentActivity() {
     }
 
     /**
-     * Called when the user presses Home or opens Recents.
      * After a short delay, checks if the activity is still not in focus
      * and brings it back to the foreground if needed.
      */
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        if (!isDismissing) {
-            handler.postDelayed({ bringBackIfNeeded() }, 50)
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus && !isDismissing) {
+            handler.postDelayed({ bringBackIfNeeded() }, 200)
         }
     }
 

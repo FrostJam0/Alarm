@@ -61,6 +61,13 @@ fun AlarmCreateBottomSheet(
     var selectedQrCode by remember { mutableStateOf<QrCode?>(null) }
     var existingQrId by remember { mutableIntStateOf(existingAlarm?.qrCodeId ?: -1) }
     var existingQrValue by remember { mutableStateOf(existingAlarm?.qrCodeValue ?: "") }
+    var existingQrName by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(existingQrId) {
+        if (existingQrId != -1) {
+            existingQrName = viewModel.getQrCodeName(existingQrId)
+        }
+    }
 
     var showQrPicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -120,7 +127,7 @@ fun AlarmCreateBottomSheet(
             ) {
                 Text("Dismiss with: ")
                 Text(
-                    text = selectedQrCode?.name ?: if (existingQrId != -1) "Assigned QR ($existingQrId)" else "None (Tap to select)",
+                    text = selectedQrCode?.name ?: existingQrName ?: if (existingQrId != -1) "Loading..." else "None (Tap to select)",
                     color = MaterialTheme.colorScheme.primary
                 )
             }
