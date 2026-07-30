@@ -203,13 +203,20 @@ fun RingingScreen(
                 .border(2.dp, Color(0xFFBAC3FF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             val clickCount by ActiveAlarmState.clickCount.collectAsState()
-            val savedOffsetX by ActiveAlarmState.buttonOffsetX.collectAsState()
-            val savedOffsetY by ActiveAlarmState.buttonOffsetY.collectAsState()
+            val savedPercentX by ActiveAlarmState.buttonPercentX.collectAsState()
+            val savedPercentY by ActiveAlarmState.buttonPercentY.collectAsState()
 
             val buttonSize = 80.dp
 
-            var offsetX by remember { mutableStateOf(if (savedOffsetX.isNaN()) ((maxWidth - buttonSize) / 2) else savedOffsetX.dp) }
-            var offsetY by remember { mutableStateOf(if (savedOffsetY.isNaN()) ((maxHeight - buttonSize) / 2) else savedOffsetY.dp) }
+            val maxOffsetX = maxWidth - buttonSize
+            val maxOffsetY = maxHeight - buttonSize
+
+            var offsetX by remember(maxWidth, maxHeight) { 
+                mutableStateOf(maxOffsetX * savedPercentX)
+            }
+            var offsetY by remember(maxWidth, maxHeight) { 
+                mutableStateOf(maxOffsetY * savedPercentY)
+            }
 
             Box(
                 modifier = Modifier
@@ -225,8 +232,8 @@ fun RingingScreen(
                                 if (currentCount >= 40) {
                                     viewModel.forceDismiss()
                                 } else {
-                                    val maxOffsetX = maxWidth.value - buttonSize.value
-                                    val maxOffsetY = maxHeight.value - buttonSize.value
+                                    val maxOffsetXVal = maxOffsetX.value
+                                    val maxOffsetYVal = maxOffsetY.value
                                     
                                     val minDistance = 0.35f * sqrt(maxWidth.value * maxWidth.value + maxHeight.value * maxHeight.value)
                                     val currentXVal = offsetX.value
@@ -237,14 +244,14 @@ fun RingingScreen(
                                     
                                     if (currentCount == 1) {
                                         // First tap: Just go anywhere random
-                                        newX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
-                                        newY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                        newX = if (maxOffsetXVal > 0) (Math.random() * maxOffsetXVal).toFloat() else 0f
+                                        newY = if (maxOffsetYVal > 0) (Math.random() * maxOffsetYVal).toFloat() else 0f
                                     } else {
                                         // Subsequent taps: Try to find a spot far away
                                         var found = false
                                         for (i in 0 until 50) {
-                                            val testX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
-                                            val testY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                            val testX = if (maxOffsetXVal > 0) (Math.random() * maxOffsetXVal).toFloat() else 0f
+                                            val testY = if (maxOffsetYVal > 0) (Math.random() * maxOffsetYVal).toFloat() else 0f
                                             
                                             val dx = testX - currentXVal
                                             val dy = testY - currentYVal
@@ -260,15 +267,19 @@ fun RingingScreen(
                                         
                                         if (!found) {
                                             // Fallback: Pick a completely random spot if we couldn't find a far one
-                                            newX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
-                                            newY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                            newX = if (maxOffsetXVal > 0) (Math.random() * maxOffsetXVal).toFloat() else 0f
+                                            newY = if (maxOffsetYVal > 0) (Math.random() * maxOffsetYVal).toFloat() else 0f
                                         }
                                     }
                                     
                                     offsetX = newX.dp
                                     offsetY = newY.dp
-                                    ActiveAlarmState.buttonOffsetX.value = newX
-                                    ActiveAlarmState.buttonOffsetY.value = newY
+                                    
+                                    // Save as percentages for orientation independence
+                                    val percentX = if (maxOffsetXVal > 0) newX / maxOffsetXVal else 0.5f
+                                    val percentY = if (maxOffsetYVal > 0) newY / maxOffsetYVal else 0.5f
+                                    ActiveAlarmState.buttonPercentX.value = percentX
+                                    ActiveAlarmState.buttonPercentY.value = percentY
                                 }
                             }
                         )

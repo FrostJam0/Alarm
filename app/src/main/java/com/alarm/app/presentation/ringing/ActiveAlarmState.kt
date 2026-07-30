@@ -8,12 +8,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
  */
 object ActiveAlarmState {
     val clickCount = MutableStateFlow(0)
-    val buttonOffsetX = MutableStateFlow(Float.NaN)
-    val buttonOffsetY = MutableStateFlow(Float.NaN)
+    val buttonPercentX = MutableStateFlow(0.5f)
+    val buttonPercentY = MutableStateFlow(0.5f)
     
     fun reset() {
         clickCount.value = 0
-        buttonOffsetX.value = Float.NaN
-        buttonOffsetY.value = Float.NaN
+        buttonPercentX.value = 0.5f
+        buttonPercentY.value = 0.5f
     }
 }
