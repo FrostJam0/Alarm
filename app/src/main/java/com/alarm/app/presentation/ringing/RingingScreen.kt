@@ -80,7 +80,7 @@ fun RingingScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF2A2A2A).copy(alpha = 0.6f)) // Grey semi-transparent overlay
+            .background(Color.Black.copy(alpha = 0.9f)) // Darker overlay
     ) {
         // Purple Region (10% height): Alarm Label
         Box(
@@ -89,8 +89,7 @@ fun RingingScreen(
                 .fillMaxHeight(0.10f)
                 .padding(8.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .border(1.5.dp, Color(0xFFBAC3FF).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.05f)),
+                .border(2.dp, Color(0xFFBAC3FF).copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -110,8 +109,7 @@ fun RingingScreen(
                 .fillMaxHeight(0.61f) // 0.61 of remaining 90% is roughly 55% of total
                 .padding(horizontal = 8.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .border(1.5.dp, greenRegionBorderColor, RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.05f)),
+                .border(2.dp, greenRegionBorderColor, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (scanState == ScanState.IDLE) {
@@ -202,8 +200,7 @@ fun RingingScreen(
                 .fillMaxHeight() // Takes remaining height (~35%)
                 .padding(8.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .border(1.5.dp, Color(0xFFBAC3FF).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-                .background(Color.White.copy(alpha = 0.05f))
+                .border(2.dp, Color(0xFFBAC3FF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             val clickCount by ActiveAlarmState.clickCount.collectAsState()
             val savedOffsetX by ActiveAlarmState.buttonOffsetX.collectAsState()
@@ -238,27 +235,34 @@ fun RingingScreen(
                                     var newX = currentXVal
                                     var newY = currentYVal
                                     
-                                    var found = false
-                                    for (i in 0 until 20) {
-                                        val testX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
-                                        val testY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
-                                        
-                                        val dx = testX - currentXVal
-                                        val dy = testY - currentYVal
-                                        val dist = sqrt(dx * dx + dy * dy)
-                                        
-                                        if (dist >= minDistance) {
-                                            newX = testX
-                                            newY = testY
-                                            found = true
-                                            break
+                                    if (currentCount == 1) {
+                                        // First tap: Just go anywhere random
+                                        newX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
+                                        newY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                    } else {
+                                        // Subsequent taps: Try to find a spot far away
+                                        var found = false
+                                        for (i in 0 until 50) {
+                                            val testX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
+                                            val testY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                            
+                                            val dx = testX - currentXVal
+                                            val dy = testY - currentYVal
+                                            val dist = sqrt(dx * dx + dy * dy)
+                                            
+                                            if (dist >= minDistance) {
+                                                newX = testX
+                                                newY = testY
+                                                found = true
+                                                break
+                                            }
                                         }
-                                    }
-                                    
-                                    if (!found) {
-                                        // Fallback
-                                        newX = maxOffsetX - currentXVal
-                                        newY = maxOffsetY - currentYVal
+                                        
+                                        if (!found) {
+                                            // Fallback: Pick a completely random spot if we couldn't find a far one
+                                            newX = if (maxOffsetX > 0) (Math.random() * maxOffsetX).toFloat() else 0f
+                                            newY = if (maxOffsetY > 0) (Math.random() * maxOffsetY).toFloat() else 0f
+                                        }
                                     }
                                     
                                     offsetX = newX.dp

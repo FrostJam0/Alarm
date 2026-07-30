@@ -143,14 +143,19 @@ class RingingViewModel @Inject constructor(
     private fun startProgressTicker() {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
+            var lastTick = System.currentTimeMillis()
             while (_scanState.value == ScanState.HOLDING || _scanState.value == ScanState.GRACE) {
                 delay(SCAN_TICK_INTERVAL_MS)
                 val now = System.currentTimeMillis()
+                val delta = now - lastTick
+                lastTick = now
                 
-                if (now - _lastQrSeenTimestamp > SCAN_TICK_INTERVAL_MS * 2) {
+                val timeSinceLastQr = now - _lastQrSeenTimestamp
+                
+                if (timeSinceLastQr > 300) {
                     if (_scanState.value == ScanState.HOLDING) {
                         updateScanState(ScanState.GRACE)
-                    } else if (_scanState.value == ScanState.GRACE && now - _lastQrSeenTimestamp > GRACE_PERIOD_MS) {
+                    } else if (_scanState.value == ScanState.GRACE && timeSinceLastQr > GRACE_PERIOD_MS) {
                         _accumulatedMs = 0
                         _scanProgress.value = 0f
                         updateScanState(ScanState.WAITING_FOR_QR)
@@ -160,7 +165,7 @@ class RingingViewModel @Inject constructor(
                     if (_scanState.value == ScanState.GRACE) {
                         updateScanState(ScanState.HOLDING)
                     }
-                    _accumulatedMs += SCAN_TICK_INTERVAL_MS
+                    _accumulatedMs += delta
                     _scanProgress.value = _accumulatedMs.toFloat() / HOLD_DURATION_MS
                     if (_accumulatedMs >= HOLD_DURATION_MS) {
                         updateScanState(ScanState.DISMISSED)
