@@ -136,7 +136,7 @@ fun RingingScreen(
                             }
 
                             val imageAnalyzer = ImageAnalysis.Builder()
-                                .setTargetResolution(Size(1280, 720))
+                                .setTargetResolution(Size(640, 480))
                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                 .build()
                                 .also { analysis ->
