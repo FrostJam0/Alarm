@@ -81,7 +81,7 @@ class RingingViewModel @Inject constructor(
     companion object {
         const val HOLD_DURATION_MS = 8000L
         const val GRACE_PERIOD_MS = 1500L
-        const val MIN_QR_AREA_PERCENT = 10f
+        const val MIN_QR_AREA_PERCENT = 12f
         const val SCAN_TICK_INTERVAL_MS = 50L
     }
 
@@ -152,7 +152,7 @@ class RingingViewModel @Inject constructor(
                 
                 val timeSinceLastQr = now - _lastQrSeenTimestamp
                 
-                if (timeSinceLastQr > 1000) {
+                if (timeSinceLastQr > 650) {
                     if (_scanState.value == ScanState.HOLDING) {
                         updateScanState(ScanState.GRACE)
                     } else if (_scanState.value == ScanState.GRACE && timeSinceLastQr > GRACE_PERIOD_MS) {
