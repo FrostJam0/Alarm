@@ -225,7 +225,7 @@ fun RingingScreen(
                             onTap = {
                                 val currentCount = ActiveAlarmState.clickCount.value + 1
                                 ActiveAlarmState.clickCount.value = currentCount
-                                if (currentCount >= 30) {
+                                if (currentCount >= 40) {
                                     viewModel.forceDismiss()
                                 } else {
                                     val maxOffsetX = maxWidth.value - buttonSize.value
@@ -272,7 +272,7 @@ fun RingingScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Tap to\nDismiss\n($clickCount/30)",
+                    text = "Tap to\nDismiss\n($clickCount/40)",
                     color = Color.Black.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     fontSize = 10.sp,
